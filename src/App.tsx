@@ -6,6 +6,7 @@ import { SecondPass } from './components/SecondPass.tsx';
 import { ThirdPass } from './components/ThirdPass.tsx';
 import { Login } from './components/Login.tsx';
 import { samplePapers } from './data/samplePapers.ts';
+import type { UnifiedNotesData } from "./components/UnifiedNotes";
 
 import type {
   Highlight,
@@ -29,6 +30,22 @@ export default function App() {
 
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
+
+  const [unifiedNotes, setUnifiedNotes] = useState<UnifiedNotesData>({
+  quickNotes: JSON.stringify({
+    category: "",
+    context: "",
+    correctness: "",
+    contributions: "",
+    clarity: "",
+  }),
+  detailedNotes: "",
+  finalReview: "",
+});
+
+const handleUpdateNotes = (notes: UnifiedNotesData) => {
+  setUnifiedNotes(notes);
+};
 
   const handleLogin = () => setIsLoggedIn(true);
 
@@ -127,6 +144,8 @@ export default function App() {
             chatMessages={chatMessages}
             onSendChatMessage={handleSendChatMessage}
             isChatLoading={isChatLoading}
+            unifiedNotes={unifiedNotes}          
+            onUpdateNotes={handleUpdateNotes}    
           />
         );
 
@@ -141,6 +160,8 @@ export default function App() {
             chatMessages={chatMessages}
             onSendChatMessage={handleSendChatMessage}
             isChatLoading={isChatLoading}
+            unifiedNotes={unifiedNotes}          
+            onUpdateNotes={handleUpdateNotes}    
           />
         );
 
@@ -155,6 +176,8 @@ export default function App() {
             chatMessages={chatMessages}
             onSendChatMessage={handleSendChatMessage}
             isChatLoading={isChatLoading}
+            unifiedNotes={unifiedNotes}         
+            onUpdateNotes={handleUpdateNotes}   
           />
         );
 
@@ -178,7 +201,7 @@ export default function App() {
    *  로그인 이후 전체 레이아웃
    * --------------------------- */
   return (
-    <div className="min-h-screen bg-background text-foreground flex">
+    <div className="h-screen bg-background text-foreground flex overflow-hidden">
       {/* Sidebar */}
       <MainSidebar
         papers={samplePapers}

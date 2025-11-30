@@ -4,7 +4,7 @@ import { PDFViewer } from './PDFViewer';
 import { TranslatedTextPanel } from './TranslatedTextPanel';
 import { Chatbot, type ChatMessage } from './Chatbot';
 import { UnifiedNotes, type UnifiedNotesData } from './UnifiedNotes';
-import { translatePaper, savePaperProgress } from '../services/api';
+import { translatePaper, savePaperProgress } from '../services/mockPaperApi';
 import type { Paper, SecondPassData, Highlight } from '../types';
 import { LangGlyphIcon } from "../assets/LangGlyphIcon";
 

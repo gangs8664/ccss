@@ -3,7 +3,7 @@ import { Save, Loader2, MessageSquare, FileText } from 'lucide-react';
 import { TranslatedTextPanel } from './TranslatedTextPanel';
 import { Chatbot, type ChatMessage } from './Chatbot';
 import { UnifiedNotes, type UnifiedNotesData } from './UnifiedNotes';
-import { generateSummary, savePaperProgress } from '../services/api';
+import { generateSummary, savePaperProgress } from '../services/mockPaperApi';
 import type { Paper, ThirdPassData, FirstPassData, SecondPassData } from '../types';
 
 interface ThirdPassProps {

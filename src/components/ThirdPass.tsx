@@ -1,23 +1,60 @@
-import { useState, useEffect } from 'react';
-import { Save, Loader2, MessageSquare, FileText } from 'lucide-react';
-import { TranslatedTextPanel } from './TranslatedTextPanel';
-import { Chatbot, type ChatMessage } from './Chatbot';
-import { UnifiedNotes, type UnifiedNotesData } from './UnifiedNotes';
-import { generateSummary, savePaperProgress } from '../services/mockPaperApi';
-import type { Paper, ThirdPassData, FirstPassData, SecondPassData } from '../types';
+import { useEffect, useMemo, useState } from "react";
+import {
+  Loader2,
+  MessageSquare,
+  FileText,
+  CheckCircle,
+} from "lucide-react";
+
+import { TranslatedTextPanel } from "./TranslatedTextPanel";
+import { Chatbot, type ChatMessage } from "./Chatbot";
+import {
+  UnifiedNotes,
+  type UnifiedNotesData,
+} from "./UnifiedNotes";
+
+import type {
+  Paper,
+  ThirdPassData,
+  FirstPassData,
+  SecondPassData,
+} from "../types";
+import { mockThirdPass } from "../hardcoded/thirdPassData";
 
 interface ThirdPassProps {
-  paper: Paper;
-  firstPassData: FirstPassData | null;
-  secondPassData: SecondPassData | null;
-  onSave: (data: ThirdPassData) => void;
-  initialData: ThirdPassData | null;
-  chatMessages: ChatMessage[];
-  onSendChatMessage: (message: string) => void;
-  isChatLoading: boolean;
-  unifiedNotes: UnifiedNotesData;
-  onUpdateNotes: (notes: UnifiedNotesData) => void;
+  paper?: Paper | null;
+  firstPassData?: FirstPassData | null;
+  secondPassData?: SecondPassData | null;
+  onSave?: (data: ThirdPassData) => void;
+  initialData?: ThirdPassData | null;
+  chatMessages?: ChatMessage[];
+  onSendChatMessage?: (message: string) => void;
+  isChatLoading?: boolean;
+  unifiedNotes?: UnifiedNotesData;
+  onUpdateNotes?: (notes: UnifiedNotesData) => void;
+  onComplete?: () => void;
 }
+
+const EMPTY_NOTES: UnifiedNotesData = {
+  quickNotes: {
+    category: "",
+    context: "",
+    correctness: "",
+    contributions: "",
+    clarity: "",
+  },
+  detailedNotes: "",
+  finalReview: "",
+};
+
+const EMPTY_THIRD_PASS: ThirdPassData = {
+  paperId: "",
+  aiSummary: "",
+  userNotes: "",
+  firstPassSummary: "",
+  secondPassSummary: "",
+  finalReview: "",
+};
 
 export function ThirdPass({
   paper,
@@ -30,103 +67,181 @@ export function ThirdPass({
   isChatLoading,
   unifiedNotes,
   onUpdateNotes,
+  onComplete,
 }: ThirdPassProps) {
-  const [aiSummary, setAiSummary] = useState(initialData?.aiSummary || '');
-  const [userNotes, setUserNotes] = useState(initialData?.userNotes || '');
-  const [finalReview, setFinalReview] = useState(initialData?.finalReview || '');
-  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
-  const [rightPanel, setRightPanel] = useState<'notes' | 'chatbot'>('notes');
+  const safePaper: Paper = useMemo(
+    () =>
+      paper ?? {
+        id: "",
+        title: "",
+        content: "",
+        translatedContent: "",
+        analysis_stage: "third_pass",
+      },
+    [paper]
+  );
 
-  // AI 요약 자동 생성
+  const safeNotes = unifiedNotes ?? EMPTY_NOTES;
+  const safeInitial = initialData ?? {
+    ...EMPTY_THIRD_PASS,
+    paperId: safePaper.id,
+    firstPassSummary: firstPassData?.notes ?? "",
+    secondPassSummary: secondPassData?.notes ?? "",
+  };
+
+  const safeChatMessages = chatMessages ?? [];
+
+  const [aiSummary, setAiSummary] = useState(
+    safeInitial.aiSummary || mockThirdPass.aiSummary
+  );
+  const [userNotes, setUserNotes] = useState(
+    safeInitial.userNotes ??
+      mockThirdPass.userNotes ??
+      ""
+  );
+  const [finalReview, setFinalReview] = useState(
+    safeInitial.finalReview ??
+      mockThirdPass.finalReview ??
+      ""
+  );
+  const [isGeneratingSummary, setIsGeneratingSummary] =
+    useState(false);
+  const [rightPanel, setRightPanel] =
+    useState<"notes" | "chatbot">("notes");
+
+  useEffect(() => {
+    if (initialData?.aiSummary && initialData.aiSummary !== aiSummary) {
+      setAiSummary(initialData.aiSummary);
+      if (import.meta.env.DEV) {
+        console.log("[ThirdPass] initialData.aiSummary applied:", initialData.aiSummary);
+      }
+    }
+    if (initialData?.userNotes && initialData.userNotes !== userNotes) {
+      setUserNotes(initialData.userNotes);
+    }
+    if (initialData?.finalReview && initialData.finalReview !== finalReview) {
+      setFinalReview(initialData.finalReview);
+    }
+  }, [initialData?.aiSummary, initialData?.userNotes, initialData?.finalReview]);
+
   useEffect(() => {
     const fetchSummary = async () => {
-      if (!aiSummary && !isGeneratingSummary) {
-        setIsGeneratingSummary(true);
-        try {
-          const response = await generateSummary(paper.id, paper.content);
-          setAiSummary(response.summary);
-        } catch (error) {
-            console.error('Summary generation failed:', error);
-            setAiSummary(
-              `이 논문은 Transformer라는 새로운 신경망 아키텍처를 제안합니다...`,
-            );
-        } finally {
-          setIsGeneratingSummary(false);
-        }
+      if (aiSummary || isGeneratingSummary) return;
+      setIsGeneratingSummary(true);
+      try {
+        const response = await mockGenerateSummary(
+          safePaper.id,
+          safePaper.content
+        );
+        setAiSummary(response.summary);
+      } catch (err) {
+        console.error("ThirdPass summary fallback:", err);
+        setAiSummary(mockThirdPass.aiSummary);
+      } finally {
+        setIsGeneratingSummary(false);
       }
     };
 
     fetchSummary();
-  }, [paper.id, paper.content, aiSummary, isGeneratingSummary]);
+  }, [
+    aiSummary,
+    isGeneratingSummary,
+    safePaper.content,
+    safePaper.id,
+  ]);
 
-  // 자동 저장
   useEffect(() => {
-    const data: ThirdPassData = {
-      paperId: paper.id,
+    if (!onSave) return;
+
+    const payload: ThirdPassData = {
+      paperId: safePaper.id,
       aiSummary,
       userNotes,
-      firstPassSummary: firstPassData?.notes || '',
-      secondPassSummary: secondPassData?.notes || '',
+      firstPassSummary: firstPassData?.notes ?? "",
+      secondPassSummary: secondPassData?.notes ?? "",
       finalReview,
     };
-    onSave(data);
-    savePaperProgress(paper.id, 'third', data);
-  }, [userNotes, finalReview, paper.id, aiSummary, firstPassData, secondPassData, onSave]);
+
+    onSave(payload);
+    mockSavePaperProgress(safePaper.id, payload);
+  }, [
+    aiSummary,
+    userNotes,
+    finalReview,
+    safePaper.id,
+    firstPassData?.notes,
+    secondPassData?.notes,
+    onSave,
+  ]);
 
   return (
     <div className="h-full overflow-hidden bg-slate-50">
       <div className="h-full flex">
-        {/* Left Panel - AI Summary */}
-        <div className="flex-1 border-r border-slate-200 flex flex-col">
-          <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex-shrink-0">
-            <h2 className="text-slate-800">GPT 요약</h2>
-            <p className="text-slate-500 text-sm mt-1">AI가 분석한 논문 요약</p>
+        <div className="flex-1 border-r border-slate-200 flex flex-col bg-white">
+          <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-slate-800">GPT 요약</h2>
+              <p className="text-slate-500 text-sm mt-1">
+                AI가 분석한 논문 요약
+              </p>
+            </div>
           </div>
 
           {isGeneratingSummary ? (
-            <div className="flex-1 flex items-center justify-center bg-white">
+            <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
                 <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mx-auto mb-3" />
-                <p className="text-slate-600">AI가 논문을 요약하는 중입니다...</p>
-                <p className="text-slate-400 text-sm mt-1">잠시만 기다려주세요</p>
+                <p className="text-slate-600">
+                  AI가 논문을 요약하는 중입니다...
+                </p>
+                <p className="text-slate-400 text-sm mt-1">
+                  잠시만 기다려주세요
+                </p>
               </div>
             </div>
           ) : (
             <div className="flex-1 overflow-hidden">
-              <TranslatedTextPanel content={aiSummary} title="GPT 요약" editable={false} />
+              <TranslatedTextPanel
+                content={aiSummary}
+                title="GPT 요약"
+                editable={false}
+              />
             </div>
           )}
         </div>
 
-        {/* Right Panel - Notes or Chatbot */}
         <div className="flex-1 flex flex-col bg-white">
           <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
             <div>
               <h2 className="text-slate-800">
-                {rightPanel === 'chatbot' ? 'AI 어시스턴트' : '나의 노트'}
+                {rightPanel === "chatbot"
+                  ? "AI 어시스턴트"
+                  : "나의 노트"}
               </h2>
               <p className="text-slate-500 text-sm mt-1">
-                {rightPanel === 'chatbot' ? '논문에 대해 질문하세요' : '학습 내용을 기록하고 정리하세요'}
+                {rightPanel === "chatbot"
+                  ? "논문에 대해 질문하세요"
+                  : "학습 내용을 기록하고 정리하세요"}
               </p>
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setRightPanel('notes')}
+                onClick={() => setRightPanel("notes")}
                 className={`p-2 rounded-lg transition-all ${
-                  rightPanel === 'notes'
-                    ? 'bg-indigo-100 text-indigo-600'
-                    : 'hover:bg-slate-200 text-slate-600'
+                  rightPanel === "notes"
+                    ? "bg-indigo-100 text-indigo-600"
+                    : "hover:bg-slate-200 text-slate-600"
                 }`}
                 title="노트 보기"
               >
                 <FileText className="w-5 h-5" />
               </button>
               <button
-                onClick={() => setRightPanel('chatbot')}
+                onClick={() => setRightPanel("chatbot")}
                 className={`p-2 rounded-lg transition-all ${
-                  rightPanel === 'chatbot'
-                    ? 'bg-indigo-100 text-indigo-600'
-                    : 'hover:bg-slate-200 text-slate-600'
+                  rightPanel === "chatbot"
+                    ? "bg-indigo-100 text-indigo-600"
+                    : "hover:bg-slate-200 text-slate-600"
                 }`}
                 title="챗봇 열기"
               >
@@ -135,22 +250,37 @@ export function ThirdPass({
             </div>
           </div>
 
-          {rightPanel === 'chatbot' ? (
+          {rightPanel === "chatbot" ? (
             <div className="flex-1 overflow-hidden">
               <Chatbot
-                messages={chatMessages}
-                onSendMessage={onSendChatMessage}
-                isLoading={isChatLoading}
+                messages={safeChatMessages}
+                onSendMessage={onSendChatMessage ?? (() => {})}
+                isLoading={isChatLoading ?? false}
               />
             </div>
           ) : (
             <>
-              <UnifiedNotes notes={unifiedNotes} onUpdate={onUpdateNotes} />
-              <div className="border-t border-slate-200 p-6 bg-white flex-shrink-0">
-                <button className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2">
-                  <Save className="w-5 h-5" />
-                  <span>최종 저장하기</span>
+              <div className="flex-1 overflow-auto">
+                <UnifiedNotes
+                  notes={safeNotes}
+                  onUpdate={onUpdateNotes ?? (() => {})}
+                />
+              </div>
+              <div className="border-t border-slate-200 p-6 bg-white flex-shrink-0 space-y-3">
+                <button
+                  onClick={onComplete}
+                  className="w-full text-white py-3 rounded-xl transition-all shadow flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(90deg,#34d399,#22c55e,#059669)",
+                  }}
+                >
+                  <CheckCircle className="w-5 h-5" />
+                  <span>학습 완료하기</span>
                 </button>
+                <p className="text-xs text-slate-500 text-center">
+                  완료 후 전체 학습 내용을 한눈에 확인할 수 있습니다
+                </p>
               </div>
             </>
           )}
@@ -158,4 +288,18 @@ export function ThirdPass({
       </div>
     </div>
   );
+}
+
+async function mockGenerateSummary(_: string, __: string) {
+  return Promise.resolve({
+    summary: mockThirdPass.aiSummary,
+  });
+}
+
+async function mockSavePaperProgress(
+  paperId: string,
+  payload: ThirdPassData
+) {
+  console.info("ThirdPass progress saved:", paperId, payload);
+  return Promise.resolve();
 }

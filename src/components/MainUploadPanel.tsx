@@ -89,9 +89,16 @@ export function MainUploadPanel() {
 
       {/* 업로드 버튼 */}
       <button
+        className="
+          flex flex-col gap-6 items-center justify-center 
+          p-8 rounded-2xl 
+          bg-white/20 backdrop-blur-xl 
+          border border-white/30 shadow-lg 
+          w-full max-w-xl
+        "
         onClick={handleUpload}
         disabled={!file || uploading}
-        className="px-4 py-2 bg-indigo-600 text-white rounded-lg"
+        // className="px-4 py-2 bg-indigo-600 text-white rounded-lg"
       >
         {uploading ? "업로드 중..." : "PDF 업로드"}
       </button>
@@ -100,7 +107,14 @@ export function MainUploadPanel() {
       <button
         onClick={handleAnalyze}
         disabled={!paperId || analyzing}
-        className="px-4 py-2 bg-purple-600 text-white rounded-lg"
+        // className="px-4 py-2 bg-purple-600 text-white rounded-lg"
+        className="
+          w-full py-3 rounded-xl
+          bg-indigo-500/70 text-white
+          backdrop-blur-lg
+          shadow-md hover:bg-indigo-600/80
+          transition
+        "
       >
         {analyzing ? "분석 중..." : "분석하기"}
       </button>

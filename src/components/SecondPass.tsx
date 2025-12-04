@@ -1,24 +1,37 @@
-import { useState, useEffect } from 'react';
-import { ChevronRight, Loader2, MessageSquare, FileText } from 'lucide-react';
-import { PDFViewer } from './PDFViewer';
-import { TranslatedTextPanel } from './TranslatedTextPanel';
-import { Chatbot, type ChatMessage } from './Chatbot';
-import { UnifiedNotes, type UnifiedNotesData } from './UnifiedNotes';
-import { translatePaper, savePaperProgress } from '../services/mockPaperApi';
-import type { Paper, SecondPassData, Highlight } from '../types';
-import { LangGlyphIcon } from "../assets/LangGlyphIcon";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ChevronRight,
+  MessageSquare,
+  FileText,
+  Languages,
+} from "lucide-react";
+
+import { PDFViewer } from "./PDFViewer";
+import { TranslatedTextPanel } from "./TranslatedTextPanel";
+import { Chatbot, type ChatMessage } from "./Chatbot";
+import {
+  UnifiedNotes,
+  type UnifiedNotesData,
+} from "./UnifiedNotes";
+
+import type {
+  Paper,
+  SecondPassData,
+  Highlight,
+} from "../types";
 
 interface SecondPassProps {
-  paper: Paper;
-  onSave: (data: SecondPassData) => void;
-  onNext: () => void;
-  onSaveAndExit: () => void;
-  initialData: SecondPassData | null;
-  chatMessages: ChatMessage[];
-  onSendChatMessage: (message: string) => void;
-  isChatLoading: boolean;
-  unifiedNotes: UnifiedNotesData;
-  onUpdateNotes: (notes: UnifiedNotesData) => void;
+  paper?: Paper;
+  onSave?: (data: SecondPassData) => void;
+  onNext?: () => void;
+  onSaveAndExit?: () => void;
+  initialData?: SecondPassData | null;
+  chatMessages?: ChatMessage[];
+  onSendChatMessage?: (message: string) => void;
+  isChatLoading?: boolean;
+  unifiedNotes?: UnifiedNotesData;
+  onUpdateNotes?: (notes: UnifiedNotesData) => void;
+  pageTranslationsData?: Record<number, string>;
 }
 
 export function SecondPass({
@@ -27,137 +40,197 @@ export function SecondPass({
   onNext,
   onSaveAndExit,
   initialData,
-  chatMessages,
-  onSendChatMessage,
-  isChatLoading,
+  chatMessages = [],
+  onSendChatMessage = () => {},
+  isChatLoading = false,
   unifiedNotes,
-  onUpdateNotes,
+  onUpdateNotes = () => {},
+  pageTranslationsData,
 }: SecondPassProps) {
-  const [pdfAnnotations, setPdfAnnotations] = useState<Highlight[]>(initialData?.pdfAnnotations || []);
-  const [translatedFullText, setTranslatedFullText] = useState(initialData?.translatedFullText || '');
-  const [pageTranslations, setPageTranslations] = useState<{ [key: number]: string }>({});
+  if (import.meta.env.DEV) {
+    console.log("[SecondPass] props", {
+      paper,
+      initialData,
+      pageTranslationsData,
+    });
+  }
+  const safePaper: Paper = useMemo(
+    () =>
+      paper ?? {
+        id: "",
+        title: "",
+        content: "",
+        translatedContent: "",
+        analysis_stage: "second_pass",
+      },
+    [paper]
+  );
+
+  const [pdfAnnotations, setPdfAnnotations] = useState<Highlight[]>(
+    initialData?.pdfAnnotations ?? []
+  );
+  const [notes, setNotes] = useState(initialData?.notes ?? "");
   const [currentPage, setCurrentPage] = useState(1);
-  const [notes, setNotes] = useState(initialData?.notes || '');
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [rightPanel, setRightPanel] =
-    useState<'translation' | 'notes' | 'chatbot'>('translation');
+  const [rightPanel, setRightPanel] = useState<
+    "translation" | "notes" | "chatbot"
+  >("translation");
 
-  // 번역 요청
+  const initialTranslation = useMemo(() => {
+    const text =
+      initialData?.translatedFullText?.trim() ??
+      safePaper.translatedContent?.trim() ??
+      "";
+    return text;
+  }, [initialData?.translatedFullText, safePaper.translatedContent]);
+
+  const [translatedFullText, setTranslatedFullText] = useState(
+    initialTranslation
+  );
+  const [pageTranslations, setPageTranslations] = useState<Record<number, string>>(
+    () =>
+      pageTranslationsData && Object.keys(pageTranslationsData).length > 0
+        ? pageTranslationsData
+        : buildPageTranslations(initialTranslation)
+  );
+  if (import.meta.env.DEV) {
+    console.log("[SecondPass] initialTranslation", initialTranslation);
+  }
+
   useEffect(() => {
-    const fetchTranslation = async () => {
-      if (Object.keys(pageTranslations).length === 0 && !isTranslating) {
-        setIsTranslating(true);
-        try {
-          const response = await translatePaper(paper.id, paper.content);
-          setTranslatedFullText(response.translatedText);
-          setPageTranslations(response.pageTranslations);
-        } catch (error) {
-          console.error('Translation failed:', error);
-          const mockPageTranslations = {
-            1: `서론\n\n딥러닝은 최근 몇 년 동안 인공지능과 기계 학습 분야에 혁명을 일으켰습니다...`,
-            2: `일반적인 CNN 아키텍처는 여러 유형의 레이어로 구성됩니다...`,
-            3: `도전 과제 및 향후 방향\n\n놀라운 진전에도 불구하고 딥러닝 연구에는 여러 과제가 남아 있습니다...`,
-          };
-          setPageTranslations(mockPageTranslations);
-          setTranslatedFullText(Object.values(mockPageTranslations).join('\n\n'));
-        } finally {
-          setIsTranslating(false);
-        }
+    setTranslatedFullText(initialTranslation);
+    if (!pageTranslationsData || Object.keys(pageTranslationsData).length === 0) {
+      const built = buildPageTranslations(initialTranslation);
+      setPageTranslations(built);
+      if (import.meta.env.DEV) {
+        console.log("[SecondPass] built page translations from text", built);
       }
-    };
+    }
+  }, [initialTranslation, pageTranslationsData]);
 
-    fetchTranslation();
-  }, [paper.id, paper.content, pageTranslations, isTranslating]);
-
-  // 자동 저장
   useEffect(() => {
-    const data: SecondPassData = {
-      paperId: paper.id,
+    if (pageTranslationsData && Object.keys(pageTranslationsData).length > 0) {
+      setPageTranslations(pageTranslationsData);
+      if (import.meta.env.DEV) {
+        console.log("[SecondPass] using provided pageTranslationsData", pageTranslationsData);
+      }
+    }
+  }, [pageTranslationsData]);
+
+  useEffect(() => {
+    if (!onSave) return;
+    const payload: SecondPassData = {
+      paperId: safePaper.id,
       pdfAnnotations,
       translatedFullText,
       notes,
     };
-    onSave(data);
-    savePaperProgress(paper.id, 'second', data);
-  }, [pdfAnnotations, translatedFullText, notes, paper.id, onSave]);
+    onSave(payload);
+  }, [pdfAnnotations, translatedFullText, notes, onSave, safePaper.id]);
 
   const handleHighlight = (text: string, color: string) => {
     const newHighlight: Highlight = {
       id: Date.now().toString(),
       text,
       color,
+      paperId: safePaper.id,
       position: {
-        pageNumber: 1,
+        pageNumber: currentPage,
         start: 0,
         end: text.length,
       },
-      paperId: paper.id,
     };
-    setPdfAnnotations([...pdfAnnotations, newHighlight]);
+    setPdfAnnotations((prev) => [...prev, newHighlight]);
   };
 
+  const pdfUrl = useMemo(() => {
+    if (safePaper.pdfUrl) return safePaper.pdfUrl;
+    if (!safePaper.file_path) return undefined;
+    if (/^https?:\/\//.test(safePaper.file_path)) return safePaper.file_path;
+
+    const apiBase =
+      (import.meta as any).env?.VITE_API_BASE_URL as
+        | string
+        | undefined;
+
+    if (!apiBase) return safePaper.file_path;
+
+    const normalizedBase = apiBase.endsWith("/")
+      ? apiBase.slice(0, -1)
+      : apiBase;
+    const normalizedPath = safePaper.file_path.startsWith("/")
+      ? safePaper.file_path.slice(1)
+      : safePaper.file_path;
+
+    return `${normalizedBase}/${normalizedPath}`;
+  }, [safePaper.file_path, safePaper.pdfUrl]);
+
+  const translationContent =
+    pageTranslations[currentPage] ??
+    (translatedFullText || safePaper.content || "");
+  if (import.meta.env.DEV) {
+    console.log("[SecondPass] translationContent", { currentPage, translationContent });
+  }
+
   return (
-    <div className="h-full overflow-hidden bg-slate-50">
-      <div className="h-full flex">
-        {/* Left Panel - PDF Viewer */}
-        <div className="flex-1 border-r border-slate-200">
+    <div className="h-full w-full overflow-hidden bg-slate-50">
+      <div className="h-full w-full flex">
+        <div className="flex-1 border-r border-slate-200 bg-white">
           <PDFViewer
-            pdfUrl={paper.pdfUrl}
-            content={paper.content}
+            pdfUrl={pdfUrl}
+            content={safePaper.content}
             onHighlight={handleHighlight}
-            onPageChange={setCurrentPage}
+            onPageChange={(page) => setCurrentPage(page)}
           />
         </div>
 
-        {/* Right Panel */}
         <div className="flex-1 flex flex-col bg-white">
           <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
             <div>
               <h2 className="text-slate-800">
-                {rightPanel === 'chatbot'
-                  ? 'AI 어시스턴트'
-                  : rightPanel === 'notes'
-                  ? '나의 노트'
-                  : `전체 번역본 (페이지 ${currentPage})`}
+                {rightPanel === "chatbot"
+                  ? "AI 어시스턴트"
+                  : rightPanel === "notes"
+                  ? "나의 노트"
+                  : `번역본 (페이지 ${currentPage})`}
               </h2>
               <p className="text-slate-500 text-sm mt-1">
-                {rightPanel === 'chatbot'
-                  ? '논문에 대해 질문하세요'
-                  : rightPanel === 'notes'
-                  ? '학습 내용을 기록하고 정리하세요'
-                  : 'AI가 번역한 내용'}
+                {rightPanel === "chatbot"
+                  ? "논문에 대해 질문하세요"
+                  : rightPanel === "notes"
+                  ? "5C 노트와 Summary를 정리하세요"
+                  : "AI가 번역한 내용을 확인하세요"}
               </p>
             </div>
+
             <div className="flex items-center gap-2">
-            {/* 번역본 보기 버튼 */}
               <button
-                onClick={() => setRightPanel('translation')}
+                onClick={() => setRightPanel("translation")}
                 className={`p-2 rounded-lg transition-all ${
-                  rightPanel === 'translation'
-                    ? 'bg-indigo-100 text-indigo-600'
-                    : 'hover:bg-slate-200 text-slate-600'
+                  rightPanel === "translation"
+                    ? "bg-indigo-100 text-indigo-600"
+                    : "hover:bg-slate-200 text-slate-600"
                 }`}
                 title="번역본 보기"
               >
-                <LangGlyphIcon className="w-5 h-5" />
+                <Languages className="w-5 h-5" />
               </button>
               <button
-                onClick={() => setRightPanel('notes')}
+                onClick={() => setRightPanel("notes")}
                 className={`p-2 rounded-lg transition-all ${
-                  rightPanel === 'notes'
-                    ? 'bg-indigo-100 text-indigo-600'
-                    : 'hover:bg-slate-200 text-slate-600'
+                  rightPanel === "notes"
+                    ? "bg-indigo-100 text-indigo-600"
+                    : "hover:bg-slate-200 text-slate-600"
                 }`}
                 title="노트 보기"
               >
                 <FileText className="w-5 h-5" />
               </button>
               <button
-                onClick={() => setRightPanel('chatbot')}
+                onClick={() => setRightPanel("chatbot")}
                 className={`p-2 rounded-lg transition-all ${
-                  rightPanel === 'chatbot'
-                    ? 'bg-indigo-100 text-indigo-600'
-                    : 'hover:bg-slate-200 text-slate-600'
+                  rightPanel === "chatbot"
+                    ? "bg-indigo-100 text-indigo-600"
+                    : "hover:bg-slate-200 text-slate-600"
                 }`}
                 title="챗봇 열기"
               >
@@ -166,16 +239,7 @@ export function SecondPass({
             </div>
           </div>
 
-          {isTranslating ? (
-            <div className="flex-1 flex items-center justify-center bg-white">
-              <div className="text-center">
-                <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mx-auto mb-3" />
-                <p className="text-slate-600">논문을 번역하는 중입니다...</p>
-                <p className="text-slate-400 text-sm mt-1">잠시만 기다려주세요</p>
-              </div>
-            </div>
-          ) : rightPanel === 'chatbot' ? (
-            // Chatbot도 패널 내부에서만 스크롤되도록 래핑
+          {rightPanel === "chatbot" ? (
             <div className="flex-1 overflow-hidden">
               <Chatbot
                 messages={chatMessages}
@@ -183,40 +247,39 @@ export function SecondPass({
                 isLoading={isChatLoading}
               />
             </div>
-          ) : rightPanel === 'notes' ? (
+          ) : rightPanel === "notes" ? (
             <>
-              <UnifiedNotes notes={unifiedNotes} onUpdate={onUpdateNotes} />
-              <div className="border-t border-slate-200 p-6 bg-white flex-shrink-0">
-                <div className="space-y-2">
-                  <button
-                    onClick={onSaveAndExit}
-                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 text-sm"
-                  >
-                    <span>저장하고 나중에 돌아오기</span>
-                  </button>
-
-                  <button
-                    onClick={onSaveAndExit}
-                    className="w-full bg-amber-50 hover:bg-amber-100 text-amber-800 py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 border border-amber-200 text-sm"
-                  >
-                    <span>배경 자료 읽고 돌아오기</span>
-                  </button>
-
-                  <button
-                    onClick={onNext}
-                    className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2.5 px-4 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 text-sm"
-                  >
-                    <span>Third Pass로 진행</span>
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
+              <UnifiedNotes
+                notes={unifiedNotes}
+                onUpdate={(updated) => onUpdateNotes(updated)}
+              />
+              <div className="border-t border-slate-200 p-6 bg-white flex-shrink-0 space-y-2">
+                <button
+      onClick={onSaveAndExit ?? (() => {})}
+                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 text-sm"
+                >
+                  저장하고 나중에 돌아오기
+                </button>
+                <button
+      onClick={onSaveAndExit ?? (() => {})}
+                  className="w-full bg-amber-50 hover:bg-amber-100 text-amber-800 py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 border border-amber-200 text-sm"
+                >
+                  배경 자료 읽고 돌아오기
+                </button>
+                <button
+      onClick={onNext ?? (() => {})}
+                  className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2.5 px-4 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 text-sm"
+                >
+                  Third Pass로 진행
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
             </>
           ) : (
             <>
               <div className="flex-1 overflow-auto">
                 <TranslatedTextPanel
-                  content={pageTranslations[currentPage] || translatedFullText}
+                  content={translationContent}
                   title={`전체 번역본 (페이지 ${currentPage})`}
                 />
               </div>
@@ -234,24 +297,22 @@ export function SecondPass({
 
                 <div className="space-y-2">
                   <button
-                    onClick={onSaveAndExit}
+      onClick={onSaveAndExit ?? (() => {})}
                     className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 text-sm"
                   >
-                    <span>저장하고 나중에 돌아오기</span>
+                    저장하고 나중에 돌아오기
                   </button>
-
                   <button
-                    onClick={onSaveAndExit}
+      onClick={onSaveAndExit ?? (() => {})}
                     className="w-full bg-amber-50 hover:bg-amber-100 text-amber-800 py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 border border-amber-200 text-sm"
                   >
-                    <span>배경 자료 읽고 돌아오기</span>
+                    배경 자료 읽고 돌아오기
                   </button>
-
                   <button
-                    onClick={onNext}
+      onClick={onNext ?? (() => {})}
                     className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2.5 px-4 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 text-sm"
                   >
-                    <span>Third Pass로 진행</span>
+                    Third Pass로 진행
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -262,4 +323,19 @@ export function SecondPass({
       </div>
     </div>
   );
+}
+
+function buildPageTranslations(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return {};
+  const segments = trimmed
+    .split(/\n{2,}/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+
+  const map: Record<number, string> = {};
+  segments.forEach((segment, idx) => {
+    map[idx + 1] = segment;
+  });
+  return map;
 }

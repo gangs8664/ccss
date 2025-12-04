@@ -114,4 +114,4 @@ export function Login({ onLogin }: LoginProps) {
       </div>
     </div>
   );
-}  // ← 이게 너 코드에는 없음!
+}  

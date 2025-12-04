@@ -4,6 +4,10 @@ import { BrowserRouter } from "react-router-dom";
 
 import App from "./App";
 import "./styles/globals.css";
+import "react-pdf/dist/esm/Page/TextLayer.css";
+import "react-pdf/dist/esm/Page/AnnotationLayer.css";
+import "./setupPdfWorker";
+
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

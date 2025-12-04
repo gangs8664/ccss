@@ -9,6 +9,7 @@ interface LibraryProps {
   isSidebarOpen: boolean;
   selectedCollectionId: string | null;
   refreshPapers: () => void;
+  onAnalyzePaper?: (paperId: string) => Promise<boolean> | boolean;
 }
 
 export function Library({
@@ -16,6 +17,7 @@ export function Library({
   onSelectPaper,
   selectedCollectionId,
   refreshPapers,
+  onAnalyzePaper,
 }: LibraryProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -25,26 +27,16 @@ export function Library({
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
 
-  /* -----------------------------
-   * 파일 선택
-   * ----------------------------- */
-  const handleClickFakeInput = () => {
-    fileInputRef.current?.click();
-  };
-
+  const handleClickFakeInput = () => fileInputRef.current?.click();
   const handleSelectFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0] ?? null;
     setFile(picked);
     setPaperId(null);
   };
 
-  /* -----------------------------
-   * 파일 업로드
-   * ----------------------------- */
   const handleUpload = async () => {
     if (!file) return alert("파일을 선택해주세요.");
-    if (!selectedCollectionId)
-      return alert("왼쪽 컬렉션을 먼저 선택해주세요.");
+    if (!selectedCollectionId) return alert("왼쪽 컬렉션을 먼저 선택해주세요.");
 
     setUploading(true);
 
@@ -63,16 +55,9 @@ export function Library({
       const newPaperId = res.data.id;
       setPaperId(newPaperId);
 
-      // 🔥 업로드 후 사이드바 새로고침
       await refreshPapers();
-
-      // 입력된 파일 UI 초기화
       setFile(null);
-
-      // file input 내부 값 초기화
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      if (fileInputRef.current) fileInputRef.current.value = "";
 
       alert("PDF 업로드 완료!");
     } catch (err) {
@@ -83,16 +68,20 @@ export function Library({
     }
   };
 
-  /* -----------------------------
-   * 분석 요청
-   * ----------------------------- */
   const handleAnalyze = async () => {
     if (!paperId) return alert("먼저 PDF를 업로드해주세요.");
-
     setAnalyzing(true);
+
     try {
-      await api.post(`/api/v1/papers/${paperId}/analyze`);
-      alert("분석 요청 완료!");
+      let success = true;
+      if (onAnalyzePaper) {
+        success = !!(await onAnalyzePaper(paperId));
+      } else {
+        await api.post(`/api/v1/papers/${paperId}/analyze`);
+        success = true;
+      }
+      if (!success) return;
+      alert("분석이 완료되었습니다!");
     } catch (err) {
       console.error(err);
       alert("분석 실패!");
@@ -101,29 +90,30 @@ export function Library({
     }
   };
 
-  /* -----------------------------
-   * 파일 제거 (X 버튼)
-   * ----------------------------- */
   const clearSelectedFile = () => {
     setFile(null);
     setPaperId(null);
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   return (
-    <div className="h-full flex flex-col bg-slate-50">
+    <div className="h-full flex flex-col bg-gradient-to-br from-indigo-50 via-white to-purple-50">
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="text-center max-w-2xl">
-          <h1 className="text-slate-900 mb-6 text-xl font-medium">
+
+          {/* 제목 */}
+          <h1 className="text-slate-800 mb-8 text-2xl font-semibold tracking-tight">
             논문, 같이 공부해요! 자료만 있다면 얼마든 가능해요!
           </h1>
 
-          <div className="bg-white rounded-2xl p-8 shadow-sm border border-slate-200 mb-8">
-
-            {/* 숨겨진 실제 파일 input */}
+          {/* 메인 카드 */}
+          <div
+            className="
+            bg-white shadow-xl rounded-3xl p-10
+            border border-slate-200 
+            "
+          >
+            {/* 실제 업로드 input */}
             <input
               type="file"
               accept="application/pdf"
@@ -132,51 +122,70 @@ export function Library({
               className="hidden"
             />
 
-            {/* 표시 UI */}
+            {/* 파일 선택 UI */}
             <div
-              className="flex items-center gap-4 bg-white rounded-xl p-4 border border-slate-300 cursor-pointer relative"
               onClick={handleClickFakeInput}
+              className="
+              flex items-center gap-3 
+              bg-slate-100 border border-slate-300
+              rounded-xl p-4 cursor-pointer
+              hover:bg-slate-200 transition
+              "
             >
               <input
                 type="text"
                 readOnly
                 value={file ? file.name : ""}
                 placeholder="이곳을 눌러 PDF 파일을 업로드하세요."
-                className="flex-1 px-4 py-2 bg-transparent focus:outline-none text-slate-600 cursor-pointer"
+                className="flex-1 px-2 py-1 bg-transparent focus:outline-none text-slate-600"
               />
 
-              {/* 🔥 X 버튼 (파일 제거) */}
               {file && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     clearSelectedFile();
                   }}
-                  className="p-1 rounded hover:bg-slate-200"
+                  className="p-1 rounded hover:bg-slate-300"
                 >
-                  <X className="w-4 h-4 text-slate-500" />
+                  <X className="w-4 h-4 text-slate-600" />
                 </button>
               )}
             </div>
 
-            {/* 업로드 / 분석 */}
-            <div className="flex flex-col space-y-3 mt-6">
+            {/* 버튼 영역 */}
+            <div className="flex flex-col space-y-4 mt-8">
+
+              {/* 업로드 버튼 */}
               <button
                 onClick={handleUpload}
                 disabled={!file || uploading}
-                className="bg-indigo-500 text-white px-6 py-2 rounded-xl disabled:opacity-50"
+                className="
+                w-full py-3 rounded-xl font-medium
+                bg-indigo-500 text-white
+                shadow hover:bg-indigo-600
+                transition disabled:opacity-50
+                "
               >
                 {uploading ? "업로드 중..." : "PDF 업로드"}
               </button>
 
+              {/* 분석 버튼 */}
               <button
                 onClick={handleAnalyze}
                 disabled={!paperId || analyzing}
-                className="bg-purple-500 text-white px-6 py-2 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
+                className="
+                w-full py-3 rounded-xl font-medium
+                bg-purple-500 text-white
+                flex items-center justify-center gap-2
+                shadow hover:bg-purple-600
+                transition disabled:opacity-50
+                "
               >
                 {analyzing ? "분석 중..." : "분석하기"}
                 <ArrowRight className="w-4 h-4" />
               </button>
+
             </div>
           </div>
         </div>

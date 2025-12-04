@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Document, Page } from "react-pdf";
 import { ChevronRight, FileText, MessageSquare } from "lucide-react";
 
@@ -82,7 +82,7 @@ export function FirstPass({
   const safeUnifiedNotes = unifiedNotes ?? EMPTY_NOTES;
 
   const [leftTab, setLeftTab] = useState<"pdf" | "ai">("pdf");
-  const [rightTab, setRightTab] = useState<"notes" | "chatbot">("notes");
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
 
@@ -207,8 +207,8 @@ export function FirstPass({
         </div>
 
         <RightPanelContent
-          rightTab={rightTab}
-          setRightTab={setRightTab}
+          isChatOpen={isChatOpen}
+          setIsChatOpen={setIsChatOpen}
           chatMessages={chatMessages}
           onSendChatMessage={onSendChatMessage}
           isChatLoading={isChatLoading}
@@ -354,8 +354,8 @@ function AiSections({ sections }: { sections: FirstPassSection[] }) {
 }
 
 function RightPanelContent({
-  rightTab,
-  setRightTab,
+  isChatOpen,
+  setIsChatOpen,
   chatMessages,
   onSendChatMessage,
   isChatLoading,
@@ -363,8 +363,8 @@ function RightPanelContent({
   onUpdateNotes,
   onNext,
 }: {
-  rightTab: "notes" | "chatbot";
-  setRightTab: (tab: "notes" | "chatbot") => void;
+  isChatOpen: boolean;
+  setIsChatOpen: (open: boolean) => void;
   chatMessages: ChatMessage[];
   onSendChatMessage: (msg: string) => void;
   isChatLoading: boolean;
@@ -372,69 +372,91 @@ function RightPanelContent({
   onUpdateNotes: (update: UnifiedNotesData) => void;
   onNext?: () => void;
 }) {
+  const notesPanelRef = useRef<HTMLDivElement | null>(null);
+
+  const focusNotes = () => {
+    if (isChatOpen) {
+      setIsChatOpen(false);
+    }
+    requestAnimationFrame(() => {
+      notesPanelRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  };
+
   return (
     <div className="flex-1 flex flex-col bg-white">
       <div className="bg-slate-50 border-b px-6 py-4 flex items-center justify-between">
         <div>
-          <h2 className="text-slate-800">
-            {rightTab === "notes" ? "나의 노트" : "AI 어시스턴트"}
-          </h2>
+          <h2 className="text-slate-800">나의 노트 & AI 대화</h2>
           <p className="text-slate-500 text-sm mt-1">
-            {rightTab === "notes"
-              ? "학습 내용을 기록하세요"
-              : "논문에 대해 질문하세요"}
+            노트를 정리하면서 동시에 AI에게 질문할 수 있어요.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setRightTab("notes")}
-            className={`p-2 rounded-lg ${
-              rightTab === "notes"
-                ? "bg-indigo-100 text-indigo-600"
-                : "hover:bg-slate-200 text-slate-600"
-            }`}
+            onClick={focusNotes}
+            className="p-2 rounded-lg transition-all hover:bg-slate-200 text-slate-600"
+            title="노트 보기"
           >
             <FileText className="w-5 h-5" />
           </button>
-
           <button
-            onClick={() => setRightTab("chatbot")}
-            className={`p-2 rounded-lg ${
-              rightTab === "chatbot"
+            onClick={() => setIsChatOpen((prev) => !prev)}
+            className={`p-2 rounded-lg transition-all ${
+              isChatOpen
                 ? "bg-indigo-100 text-indigo-600"
                 : "hover:bg-slate-200 text-slate-600"
             }`}
+            title={isChatOpen ? "챗봇 닫기" : "챗봇 열기"}
           >
             <MessageSquare className="w-5 h-5" />
           </button>
         </div>
       </div>
 
-      {rightTab === "chatbot" ? (
-        <Chatbot
-          messages={chatMessages}
-          onSendMessage={onSendChatMessage}
-          isLoading={isChatLoading}
-        />
-      ) : (
-        <>
+      <div
+        className={`flex-1 overflow-hidden flex flex-col ${
+          isChatOpen ? "xl:flex-row" : ""
+        }`}
+      >
+        <div ref={notesPanelRef} className="flex-1 overflow-auto">
           <UnifiedNotes
             notes={unifiedNotes}
             onUpdate={(updated) => onUpdateNotes(updated)}
           />
+        </div>
 
-          <div className="border-t p-6">
-            <button
-              onClick={onNext}
-              className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl flex items-center justify-center gap-2 disabled:opacity-50"
-              disabled={!onNext}
-            >
-              <span>Second Pass로 이동</span>
-              <ChevronRight className="w-5 h-5" />
-            </button>
+        {isChatOpen && (
+          <div className="w-full xl:w-96 border-t xl:border-t-0 xl:border-l border-slate-200 bg-white flex-shrink-0 min-h-[320px] max-h-full">
+            <Chatbot
+              messages={chatMessages}
+              onSendMessage={onSendChatMessage}
+              isLoading={isChatLoading}
+            />
           </div>
-        </>
+        )}
+      </div>
+
+      {isChatOpen && (
+        <div className="border-t border-slate-200 bg-white px-6 py-3 text-xs text-slate-500">
+          챗봇 대화는 패널을 닫아도 유지돼요.
+        </div>
+      )}
+
+      {onNext && (
+        <div className="border-t p-6 bg-white flex-shrink-0">
+          <button
+            onClick={onNext}
+            className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-3 rounded-xl flex items-center justify-center gap-2"
+          >
+            <span>Second Pass로 이동</span>
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
       )}
     </div>
   );

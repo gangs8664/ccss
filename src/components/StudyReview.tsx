@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   BookMarked,
@@ -109,6 +109,96 @@ const COLOR_STYLES = {
   },
 };
 
+type Html2CanvasFn = (
+  element: HTMLElement,
+  options?: Record<string, unknown>
+) => Promise<HTMLCanvasElement>;
+
+type JsPdfInstance = {
+  internal: {
+    pageSize: {
+      getWidth: () => number;
+      getHeight: () => number;
+    };
+  };
+  addImage: (...args: any[]) => void;
+  addPage: () => void;
+  save: (filename: string) => void;
+};
+
+type JsPdfConstructor = new (...args: any[]) => JsPdfInstance;
+
+declare global {
+  interface Window {
+    html2canvas?: Html2CanvasFn;
+    jspdf?: {
+      jsPDF: JsPdfConstructor;
+    };
+  }
+}
+
+const HTML2CANVAS_CDN =
+  "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+const JSPDF_CDN =
+  "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js";
+
+const scriptLoadCache = new Map<string, Promise<void>>();
+
+function loadScriptFromCdn(url: string) {
+  if (scriptLoadCache.has(url)) {
+    return scriptLoadCache.get(url)!;
+  }
+
+  const promise = new Promise<void>((resolve, reject) => {
+    if (typeof document === "undefined") {
+      reject(new Error("문서 객체를 찾을 수 없습니다."));
+      return;
+    }
+
+    const existing = document.querySelector(
+      `script[data-cdn-script="${url}"]`
+    ) as HTMLScriptElement | null;
+
+    if (existing?.getAttribute("data-loaded") === "true") {
+      resolve();
+      return;
+    }
+
+    const script = existing ?? document.createElement("script");
+    script.src = url;
+    script.async = true;
+    script.setAttribute("data-cdn-script", url);
+
+    script.onload = () => {
+      script.setAttribute("data-loaded", "true");
+      resolve();
+    };
+    script.onerror = () =>
+      reject(new Error(`스크립트를 불러오지 못했습니다: ${url}`));
+
+    if (!existing) {
+      document.body.appendChild(script);
+    }
+  });
+
+  scriptLoadCache.set(url, promise);
+  return promise;
+}
+
+async function ensurePdfLibrariesLoaded() {
+  await loadScriptFromCdn(HTML2CANVAS_CDN);
+  await loadScriptFromCdn(JSPDF_CDN);
+
+  const html2canvas = window.html2canvas;
+  const JsPDF = window.jspdf?.jsPDF;
+
+  if (!html2canvas || !JsPDF) {
+    throw new Error("PDF 변환 라이브러리를 불러오지 못했습니다.");
+  }
+
+  return { html2canvas, JsPDF };
+}
+
 export function StudyReview({
   paper,
   firstPassData,
@@ -120,6 +210,8 @@ export function StudyReview({
 }: StudyReviewProps) {
   const [activeTab, setActiveTab] =
     useState<"overview" | "notes" | "chat">("overview");
+  const [isExporting, setIsExporting] = useState(false);
+  const reportRef = useRef<HTMLDivElement | null>(null);
 
   const fiveCData: FiveCData = useMemo(() => {
     const value = unifiedNotes.quickNotes;
@@ -158,8 +250,95 @@ export function StudyReview({
     { id: "chat" as const, label: "질의응답 기록", icon: MessageSquare },
   ];
 
+  const handleExportPdf = async () => {
+    if (!reportRef.current || isExporting) return;
+    let originalRootStyles:
+      | { height: string; minHeight: string; overflow: string }
+      | null = null;
+    let scrollStylesSnapshot:
+      | { node: HTMLElement; height: string; overflow: string }[]
+      | null = null;
+    try {
+      setIsExporting(true);
+      const element = reportRef.current;
+      originalRootStyles = {
+        height: element.style.height,
+        minHeight: element.style.minHeight,
+        overflow: element.style.overflow,
+      };
+      const scrollContainers = Array.from(
+        element.querySelectorAll<HTMLElement>('[data-export-scroll="true"]')
+      );
+      scrollStylesSnapshot = scrollContainers.map((node) => ({
+        node,
+        height: node.style.height,
+        overflow: node.style.overflow,
+      }));
+
+      element.style.height = "auto";
+      element.style.minHeight = "0";
+      element.style.overflow = "visible";
+      scrollContainers.forEach((node) => {
+        node.style.height = `${node.scrollHeight}px`;
+        node.style.overflow = "visible";
+      });
+
+      const { html2canvas, JsPDF } = await ensurePdfLibrariesLoaded();
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
+      });
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new JsPDF("p", "mm", "a4");
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      let heightLeft = pdfHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - pdfHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const sanitizedTitle =
+        (paper.title || "study-review").replace(/[\\/:*?"<>|]/g, "_") ||
+        "study-review";
+      pdf.save(`${sanitizedTitle}.pdf`);
+    } catch (error) {
+      console.error("PDF export failed:", error);
+      alert("PDF 내보내기에 실패했습니다. 잠시 후 다시 시도해주세요.");
+    } finally {
+      if (reportRef.current && originalRootStyles) {
+        const element = reportRef.current;
+        element.style.height = originalRootStyles.height;
+        element.style.minHeight = originalRootStyles.minHeight;
+        element.style.overflow = originalRootStyles.overflow;
+      }
+      if (scrollStylesSnapshot) {
+        scrollStylesSnapshot.forEach(({ node, height, overflow }) => {
+          node.style.height = height;
+          node.style.overflow = overflow;
+        });
+      }
+      setIsExporting(false);
+    }
+  };
+
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-slate-50 to-slate-100">
+    <div
+      ref={reportRef}
+      className="h-screen flex flex-col bg-gradient-to-br from-slate-50 to-slate-100"
+    >
       <div className="bg-white border-b border-slate-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 py-6">
           <div className="flex items-start justify-between gap-8">
@@ -203,9 +382,13 @@ export function StudyReview({
                 <Share2 className="w-4 h-4" />
                 공유
               </button>
-              <button className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-indigo-600/30">
+              <button
+                onClick={handleExportPdf}
+                disabled={isExporting}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center gap-2 shadow-lg shadow-indigo-600/30 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
                 <Download className="w-4 h-4" />
-                내보내기
+                {isExporting ? "내보내는 중..." : "내보내기"}
               </button>
             </div>
           </div>
@@ -284,7 +467,10 @@ export function StudyReview({
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div
+        className="flex-1 overflow-auto"
+        data-export-scroll="true"
+      >
         <div className="max-w-7xl mx-auto px-6 py-8">
           {activeTab === "overview" && (
             <div className="space-y-6">

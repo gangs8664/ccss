@@ -617,6 +617,8 @@ import type {
 } from "./types";
 import type { UnifiedNotesData } from "./components/UnifiedNotes";
 import { StudyReview } from "./components/StudyReview";
+import type { ChatMessage } from "./components/Chatbot";
+import { fetchChatHistory, sendChatMessage } from "./services/chatApi";
 
 
 /* ---------------- 기본 값 ---------------- */
@@ -712,6 +714,111 @@ const persistUnifiedNotes = async (
     console.error("🟥 노트 저장 실패:", err);
   }
 };
+
+const mapChatHistoryToMessages = (
+  records: Awaited<ReturnType<typeof fetchChatHistory>>
+): ChatMessage[] => {
+  if (!Array.isArray(records)) return [];
+  return [...records]
+    .sort(
+      (a, b) =>
+        new Date(a.created_at ?? 0).getTime() -
+        new Date(b.created_at ?? 0).getTime()
+    )
+    .flatMap((record) => {
+      const timestamp = new Date(record.created_at ?? Date.now());
+      const entries: ChatMessage[] = [];
+      const question = record.question?.trim();
+      const answer = record.answer?.trim();
+      if (question) {
+        entries.push({
+          id: `${record.question_id}-question`,
+          role: "user",
+          content: question,
+          timestamp,
+        });
+      }
+      if (answer) {
+        entries.push({
+          id: `${record.question_id}-answer`,
+          role: "assistant",
+          content: answer,
+          timestamp,
+        });
+      }
+      return entries;
+    });
+};
+
+function usePaperChat(paperId?: string) {
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isChatLoading, setIsChatLoading] = useState(false);
+
+  useEffect(() => {
+    setChatMessages([]);
+    if (!paperId) return;
+
+    let ignore = false;
+    const loadHistory = async () => {
+      try {
+        const history = await fetchChatHistory(paperId);
+        if (!ignore) {
+          setChatMessages(mapChatHistoryToMessages(history));
+        }
+      } catch (err) {
+        console.error("챗봇 히스토리 로드 실패:", err);
+      }
+    };
+    loadHistory();
+    return () => {
+      ignore = true;
+    };
+  }, [paperId]);
+
+  const handleSendChatMessage = useCallback(
+    async (message: string) => {
+      if (!paperId) return;
+      const trimmed = message.trim();
+      if (!trimmed || isChatLoading) return;
+
+      const userMessage: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: trimmed,
+        timestamp: new Date(),
+      };
+      setChatMessages((prev) => [...prev, userMessage]);
+      setIsChatLoading(true);
+
+      try {
+        const response = await sendChatMessage(paperId, trimmed);
+        const assistantMessage: ChatMessage = {
+          id: `${response.question_id ?? `assistant-${Date.now()}`}`,
+          role: "assistant",
+          content: response.answer ?? "답변을 가져오지 못했습니다.",
+          timestamp: new Date(),
+        };
+        setChatMessages((prev) => [...prev, assistantMessage]);
+      } catch (err) {
+        console.error("챗봇 응답 실패:", err);
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: `assistant-error-${Date.now()}`,
+            role: "assistant",
+            content: "응답을 가져오는 데 실패했습니다. 잠시 후 다시 시도해주세요.",
+            timestamp: new Date(),
+          },
+        ]);
+      } finally {
+        setIsChatLoading(false);
+      }
+    },
+    [paperId, isChatLoading]
+  );
+
+  return { chatMessages, isChatLoading, handleSendChatMessage };
+}
 
 
 /* ---------------- FirstPass Wrapper ---------------- */
@@ -816,6 +923,8 @@ function FirstPassPageWrapper({
     };
   }, [paperId, existingNotes, onUpdateNotes]);
 
+  const { chatMessages, isChatLoading, handleSendChatMessage } = usePaperChat(paperId);
+
   let sections = [];
   try {
     if (Array.isArray(raw)) {
@@ -869,6 +978,9 @@ function FirstPassPageWrapper({
         unifiedNotes={existingNotes ?? EMPTY_UNIFIED_NOTES}
         onUpdateNotes={(updated) => onUpdateNotes(paperId, updated)}
         onNext={() => navigate(`/papers/${paperId}/secondpass`)}
+        chatMessages={chatMessages}
+        onSendChatMessage={handleSendChatMessage}
+        isChatLoading={isChatLoading}
       />
     </div>
   );
@@ -957,6 +1069,11 @@ function SecondPassPageWrapper({ papers, notesMap, onUpdateNotes }) {
   }, [paperId, existingNotes, onUpdateNotes]);
 
   const unifiedNotes = existingNotes ?? EMPTY_UNIFIED_NOTES;
+  const {
+    chatMessages,
+    isChatLoading,
+    handleSendChatMessage,
+  } = usePaperChat(paperId);
 
   if (loading) {
     return (
@@ -993,9 +1110,9 @@ function SecondPassPageWrapper({ papers, notesMap, onUpdateNotes }) {
         paper={safePaper}
         initialData={initialData}
         pageTranslationsData={pageTranslations}
-        chatMessages={[]}
-        onSendChatMessage={() => {}}
-        isChatLoading={false}
+        chatMessages={chatMessages}
+        onSendChatMessage={handleSendChatMessage}
+        isChatLoading={isChatLoading}
         unifiedNotes={unifiedNotes}
         onUpdateNotes={(updated) => onUpdateNotes(paperId, updated)}
         onSave={() => {}}
@@ -1097,6 +1214,12 @@ function ThirdPassPageWrapper({ papers, notesMap, onUpdateNotes }) {
     };
   }, [paperId, existingNotes, onUpdateNotes]);
 
+  const {
+    chatMessages: thirdPassChatMessages,
+    isChatLoading: isThirdPassChatLoading,
+    handleSendChatMessage: handleThirdPassSendChatMessage,
+  } = usePaperChat(paperId);
+
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-slate-50 text-slate-500">
@@ -1133,9 +1256,9 @@ function ThirdPassPageWrapper({ papers, notesMap, onUpdateNotes }) {
       <ThirdPass
         paper={safePaper}
         initialData={initialData}
-        chatMessages={[]}
-        onSendChatMessage={() => {}}
-        isChatLoading={false}
+        chatMessages={thirdPassChatMessages}
+        onSendChatMessage={handleThirdPassSendChatMessage}
+        isChatLoading={isThirdPassChatLoading}
         unifiedNotes={existingNotes ?? EMPTY_UNIFIED_NOTES}
         onUpdateNotes={(updated) => onUpdateNotes(paperId, updated)}
         onComplete={() => navigate(`/papers/${paperId}/review`)}
@@ -1257,6 +1380,8 @@ function StudyReviewPageWrapper({ papers, notesMap, onUpdateNotes }) {
         }
       : null;
 
+  const { chatMessages: reviewChatMessages } = usePaperChat(paperId);
+
   if (loading && !thirdPassData) {
     return (
       <div className="h-screen flex items-center justify-center bg-slate-50 text-slate-500">
@@ -1272,7 +1397,7 @@ function StudyReviewPageWrapper({ papers, notesMap, onUpdateNotes }) {
         firstPassData={firstPassData}
         secondPassData={secondPassData}
         thirdPassData={thirdPassData}
-        chatMessages={[]}
+        chatMessages={reviewChatMessages}
         unifiedNotes={unifiedNotes}
         onBackToLibrary={() => navigate("/main")}
       />

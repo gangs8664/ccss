@@ -71,9 +71,10 @@ export function SecondPass({
   );
   const [notes, setNotes] = useState(initialData?.notes ?? "");
   const [currentPage, setCurrentPage] = useState(1);
-  const [rightPanel, setRightPanel] = useState<
-    "translation" | "notes" | "chatbot"
-  >("translation");
+  const [contentTab, setContentTab] = useState<"translation" | "notes">(
+    "translation"
+  );
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   const initialTranslation = useMemo(() => {
     const text =
@@ -187,16 +188,12 @@ export function SecondPass({
           <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
             <div>
               <h2 className="text-slate-800">
-                {rightPanel === "chatbot"
-                  ? "AI 어시스턴트"
-                  : rightPanel === "notes"
+                {contentTab === "notes"
                   ? "나의 노트"
                   : `번역본 (페이지 ${currentPage})`}
               </h2>
               <p className="text-slate-500 text-sm mt-1">
-                {rightPanel === "chatbot"
-                  ? "논문에 대해 질문하세요"
-                  : rightPanel === "notes"
+                {contentTab === "notes"
                   ? "5C 노트와 Summary를 정리하세요"
                   : "AI가 번역한 내용을 확인하세요"}
               </p>
@@ -204,9 +201,9 @@ export function SecondPass({
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setRightPanel("translation")}
+                onClick={() => setContentTab("translation")}
                 className={`p-2 rounded-lg transition-all ${
-                  rightPanel === "translation"
+                  contentTab === "translation"
                     ? "bg-indigo-100 text-indigo-600"
                     : "hover:bg-slate-200 text-slate-600"
                 }`}
@@ -215,9 +212,9 @@ export function SecondPass({
                 <Languages className="w-5 h-5" />
               </button>
               <button
-                onClick={() => setRightPanel("notes")}
+                onClick={() => setContentTab("notes")}
                 className={`p-2 rounded-lg transition-all ${
-                  rightPanel === "notes"
+                  contentTab === "notes"
                     ? "bg-indigo-100 text-indigo-600"
                     : "hover:bg-slate-200 text-slate-600"
                 }`}
@@ -226,101 +223,115 @@ export function SecondPass({
                 <FileText className="w-5 h-5" />
               </button>
               <button
-                onClick={() => setRightPanel("chatbot")}
+                onClick={() => setIsChatOpen((prev) => !prev)}
                 className={`p-2 rounded-lg transition-all ${
-                  rightPanel === "chatbot"
+                  isChatOpen
                     ? "bg-indigo-100 text-indigo-600"
                     : "hover:bg-slate-200 text-slate-600"
                 }`}
-                title="챗봇 열기"
+                title={isChatOpen ? "챗봇 닫기" : "챗봇 열기"}
               >
                 <MessageSquare className="w-5 h-5" />
               </button>
             </div>
           </div>
 
-          {rightPanel === "chatbot" ? (
-            <div className="flex-1 overflow-hidden">
-              <Chatbot
-                messages={chatMessages}
-                onSendMessage={onSendChatMessage}
-                isLoading={isChatLoading}
-              />
-            </div>
-          ) : rightPanel === "notes" ? (
-            <>
-              <UnifiedNotes
-                notes={unifiedNotes}
-                onUpdate={(updated) => onUpdateNotes(updated)}
-              />
-              <div className="border-t border-slate-200 p-6 bg-white flex-shrink-0 space-y-2">
-                <button
-      onClick={onSaveAndExit ?? (() => {})}
-                  className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 text-sm"
-                >
-                  저장하고 나중에 돌아오기
-                </button>
-                <button
-      onClick={onSaveAndExit ?? (() => {})}
-                  className="w-full bg-amber-50 hover:bg-amber-100 text-amber-800 py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 border border-amber-200 text-sm"
-                >
-                  배경 자료 읽고 돌아오기
-                </button>
-                <button
-      onClick={onNext ?? (() => {})}
-                  className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2.5 px-4 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 text-sm"
-                >
-                  Third Pass로 진행
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex-1 overflow-auto">
-                <TranslatedTextPanel
-                  content={translationContent}
-                  title={`전체 번역본 (페이지 ${currentPage})`}
-                />
-              </div>
-
-              <div className="border-t border-slate-200 p-6 bg-white space-y-4 flex-shrink-0">
-                <div>
-                  <h3 className="text-slate-700 mb-2">메모</h3>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="논문 내용에 대한 메모를 작성하세요..."
-                    className="w-full h-24 p-3 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-slate-50 resize-none text-sm"
+          <div
+            className={`flex-1 overflow-hidden flex flex-col ${
+              isChatOpen ? "xl:flex-row" : ""
+            }`}
+          >
+            <div className="flex-1 min-h-0">
+              {contentTab === "notes" ? (
+                <div className="h-full overflow-auto">
+                  <UnifiedNotes
+                    notes={unifiedNotes}
+                    onUpdate={(updated) => onUpdateNotes(updated)}
                   />
                 </div>
+              ) : (
+                <div className="h-full flex flex-col">
+                  <div className="flex-1 overflow-auto">
+                    <TranslatedTextPanel
+                      content={translationContent}
+                      title={`전체 번역본 (페이지 ${currentPage})`}
+                    />
+                  </div>
 
-                <div className="space-y-2">
-                  <button
-      onClick={onSaveAndExit ?? (() => {})}
-                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 text-sm"
-                  >
-                    저장하고 나중에 돌아오기
-                  </button>
-                  <button
-      onClick={onSaveAndExit ?? (() => {})}
-                    className="w-full bg-amber-50 hover:bg-amber-100 text-amber-800 py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 border border-amber-200 text-sm"
-                  >
-                    배경 자료 읽고 돌아오기
-                  </button>
-                  <button
-      onClick={onNext ?? (() => {})}
-                    className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2.5 px-4 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 text-sm"
-                  >
-                    Third Pass로 진행
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
+                  <div className="border-t border-slate-200 p-6 bg-white space-y-4 flex-shrink-0">
+                    <div>
+                      <h3 className="text-slate-700 mb-2">메모</h3>
+                      <textarea
+                        value={notes}
+                        onChange={(e) => setNotes(e.target.value)}
+                        placeholder="논문 내용에 대한 메모를 작성하세요..."
+                        className="w-full h-24 p-3 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-slate-50 resize-none text-sm"
+                      />
+                    </div>
+                  </div>
                 </div>
+              )}
+            </div>
+
+            {isChatOpen && (
+              <div className="w-full xl:w-96 border-t xl:border-t-0 xl:border-l border-slate-200 bg-white flex-shrink-0 min-h-[320px] max-h-full">
+                <Chatbot
+                  messages={chatMessages}
+                  onSendMessage={onSendChatMessage}
+                  isLoading={isChatLoading}
+                />
               </div>
-            </>
-          )}
+            )}
+          </div>
+
+          <SecondPassActionBar
+            onSaveAndExit={onSaveAndExit}
+            onNext={onNext}
+          />
         </div>
       </div>
+    </div>
+  );
+}
+
+function SecondPassActionBar({
+  onSaveAndExit,
+  onNext,
+}: {
+  onSaveAndExit?: () => void;
+  onNext?: () => void;
+}) {
+  const handleSave = () => {
+    onSaveAndExit?.();
+  };
+  const handleNext = () => {
+    onNext?.();
+  };
+
+  return (
+    <div className="border-t border-slate-200 p-6 bg-white flex-shrink-0 space-y-2">
+      <button
+        onClick={handleSave}
+        className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 text-sm"
+      >
+        저장하고 나중에 돌아오기
+      </button>
+
+      <button
+        onClick={handleSave}
+        className="w-full bg-amber-50 hover:bg-amber-100 text-amber-800 py-2.5 px-4 rounded-lg transition-all flex items-center justify-center gap-2 border border-amber-200 text-sm"
+      >
+        배경 자료 읽고 돌아오기
+      </button>
+
+      <button
+        onClick={handleNext}
+        disabled={!onNext}
+        className="w-full bg-indigo-500 hover:bg-indigo-600 text-white py-2.5 px-4 rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Third Pass로 진행
+        <ChevronRight className="w-4 h-4" />
+      </button>
     </div>
   );
 }

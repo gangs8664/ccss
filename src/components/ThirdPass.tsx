@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Loader2,
   MessageSquare,
@@ -106,8 +106,8 @@ export function ThirdPass({
   );
   const [isGeneratingSummary, setIsGeneratingSummary] =
     useState(false);
-  const [rightPanel, setRightPanel] =
-    useState<"notes" | "chatbot">("notes");
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const notesPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (initialData?.aiSummary && initialData.aiSummary !== aiSummary) {
@@ -213,77 +213,81 @@ export function ThirdPass({
         <div className="flex-1 flex flex-col bg-white">
           <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
             <div>
-              <h2 className="text-slate-800">
-                {rightPanel === "chatbot"
-                  ? "AI 어시스턴트"
-                  : "나의 노트"}
-              </h2>
+              <h2 className="text-slate-800">나의 노트 & AI 어시스턴트</h2>
               <p className="text-slate-500 text-sm mt-1">
-                {rightPanel === "chatbot"
-                  ? "논문에 대해 질문하세요"
-                  : "학습 내용을 기록하고 정리하세요"}
+                학습을 정리하면서 동시에 AI에게 질문할 수 있어요.
               </p>
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setRightPanel("notes")}
-                className={`p-2 rounded-lg transition-all ${
-                  rightPanel === "notes"
-                    ? "bg-indigo-100 text-indigo-600"
-                    : "hover:bg-slate-200 text-slate-600"
-                }`}
+                onClick={() => {
+                  if (isChatOpen) {
+                    setIsChatOpen(false);
+                  }
+                  requestAnimationFrame(() => {
+                    notesPanelRef.current?.scrollIntoView({
+                      behavior: "smooth",
+                      block: "start",
+                    });
+                  });
+                }}
+                className="p-2 rounded-lg transition-all hover:bg-slate-200 text-slate-600"
                 title="노트 보기"
               >
                 <FileText className="w-5 h-5" />
               </button>
               <button
-                onClick={() => setRightPanel("chatbot")}
+                onClick={() => setIsChatOpen((prev) => !prev)}
                 className={`p-2 rounded-lg transition-all ${
-                  rightPanel === "chatbot"
+                  isChatOpen
                     ? "bg-indigo-100 text-indigo-600"
                     : "hover:bg-slate-200 text-slate-600"
                 }`}
-                title="챗봇 열기"
+                title={isChatOpen ? "챗봇 닫기" : "챗봇 열기"}
               >
                 <MessageSquare className="w-5 h-5" />
               </button>
             </div>
           </div>
 
-          {rightPanel === "chatbot" ? (
-            <div className="flex-1 overflow-hidden">
-              <Chatbot
-                messages={safeChatMessages}
-                onSendMessage={onSendChatMessage ?? (() => {})}
-                isLoading={isChatLoading ?? false}
+          <div
+            className={`flex-1 overflow-hidden flex flex-col ${
+              isChatOpen ? "xl:flex-row" : ""
+            }`}
+          >
+            <div ref={notesPanelRef} className="flex-1 overflow-auto">
+              <UnifiedNotes
+                notes={safeNotes}
+                onUpdate={onUpdateNotes ?? (() => {})}
               />
             </div>
-          ) : (
-            <>
-              <div className="flex-1 overflow-auto">
-                <UnifiedNotes
-                  notes={safeNotes}
-                  onUpdate={onUpdateNotes ?? (() => {})}
+            {isChatOpen && (
+              <div className="w-full xl:w-96 border-t xl:border-t-0 xl:border-l border-slate-200 bg-white flex-shrink-0 min-h-[320px] max-h-full">
+                <Chatbot
+                  messages={safeChatMessages}
+                  onSendMessage={onSendChatMessage ?? (() => {})}
+                  isLoading={isChatLoading ?? false}
                 />
               </div>
-              <div className="border-t border-slate-200 p-6 bg-white flex-shrink-0 space-y-3">
-                <button
-                  onClick={onComplete}
-                  className="w-full text-white py-3 rounded-xl transition-all shadow flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                  style={{
-                    backgroundImage:
-                      "linear-gradient(90deg,#34d399,#22c55e,#059669)",
-                  }}
-                >
-                  <CheckCircle className="w-5 h-5" />
-                  <span>학습 완료하기</span>
-                </button>
-                <p className="text-xs text-slate-500 text-center">
-                  완료 후 전체 학습 내용을 한눈에 확인할 수 있습니다
-                </p>
-              </div>
-            </>
-          )}
+            )}
+          </div>
+
+          <div className="border-t border-slate-200 p-6 bg-white flex-shrink-0 space-y-3">
+            <button
+              onClick={onComplete}
+              className="w-full text-white py-3 rounded-xl transition-all shadow flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-emerald-200 disabled:opacity-60 disabled:cursor-not-allowed"
+              style={{
+                backgroundImage:
+                  "linear-gradient(90deg,#34d399,#22c55e,#059669)",
+              }}
+            >
+              <CheckCircle className="w-5 h-5" />
+              <span>학습 완료하기</span>
+            </button>
+            <p className="text-xs text-slate-500 text-center">
+              완료 후 전체 학습 내용을 한눈에 확인할 수 있습니다
+            </p>
+          </div>
         </div>
       </div>
     </div>

@@ -53,7 +53,7 @@ export interface SecondPassData {
 
 export interface ThirdPassData {
   paperId: string;
-  aiSummary: string; // GPT가 요약한 내용
+  aiSummary: string; // AI가 생성한 요약
   userNotes: string; // 사용자 작성 노트
   firstPassSummary?: string;
   secondPassSummary?: string;

@@ -180,9 +180,9 @@ export function ThirdPass({
         <div className="flex-1 border-r border-slate-200 flex flex-col bg-white">
           <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between">
             <div>
-              <h2 className="text-slate-800">GPT 요약</h2>
+              <h2 className="text-slate-800">AI 요약</h2>
               <p className="text-slate-500 text-sm mt-1">
-                AI가 분석한 논문 요약
+                모델이 분석한 요약 결과
               </p>
             </div>
           </div>
@@ -203,7 +203,7 @@ export function ThirdPass({
             <div className="flex-1 overflow-hidden">
               <TranslatedTextPanel
                 content={aiSummary}
-                title="GPT 요약"
+                title="AI 요약"
                 editable={false}
               />
             </div>
